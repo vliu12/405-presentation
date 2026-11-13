@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Living Under the Hum: The Psychological Toll of Drone Surveillance</title>
+
+<!-- === FONTS ===
+     Big Shoulders Display: headlines (stark, condensed, signage-like)
+     Barlow: body copy
+     IBM Plex Mono: viewfinder / telemetry chrome only -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Barlow:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+/* ===========================================
+   THEME: "OVERWATCH"
+   The audience sees each slide through a drone camera's viewfinder.
+   Change these variables to restyle the whole deck.
+   =========================================== */
+:root {
+    --stage-bg: #050708;
+    --slide-bg: #0E1416;
+    --bg-deep: #090D0E;
+    --bg-lift: #1B2528;
+    --panel: rgba(159, 179, 168, 0.06);
+    --panel-line: rgba(159, 179, 168, 0.22);
+
+    --bone: #E6E1D3;        /* headlines */
+    --body: #B8C0B9;        /* body copy */
+    --sage: #9FB3A8;        /* HUD lines and labels */
+    --dim: #7F8F88;         /* sources, quiet chrome (≥4.5:1 on bg) */
+    --amber: #F2A93B;       /* the one accent: emphasis, numbers */
+    --rec: #E5484D;         /* recording dot only */
+
+    --font-display: 'Big Shoulders Display', 'Arial Narrow', sans-serif;
+    --font-body: 'Barlow', 'Helvetica Neue', sans-serif;
+    --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+
+    /* Type scale (px at 1920×1080) */
+    --t-hero: 220px;
+    --t-h2: 96px;
+    --t-h3: 34px;
+    --t-body: 30px;
+    --t-small: 24px;
+
+    --pad-x: 180px;
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ===========================================
+   FIXED 16:9 STAGE: viewport-base.css (included in full)
+   =========================================== */
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: var(--stage-bg, #000);
+}
+.deck-viewport {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    background: var(--stage-bg, #000);
+}
+.deck-stage {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    transform-origin: 0 0;
+    background: var(--slide-bg, #fff);
+}
+.slide {
+    position: absolute;
+    inset: 0;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    display: block;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    background: var(--slide-bg, #fff);
+}
+.slide.active,
+.slide.visible {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    z-index: 1;
+}
+img, video, canvas, svg { max-width: 100%; max-height: 100%; }
+.deck-controls {
+    position: fixed;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%);
+    z-index: 1000;
+}
+@media print {
+    html, body { width: 1920px; height: auto; overflow: visible; background: #fff; }
+    .deck-viewport { position: static; overflow: visible; background: #fff; }
+    .deck-stage { position: static; width: auto; height: auto; transform: none !important; background: none; }
+    .slide {
+        position: relative; display: block !important; visibility: visible !important;
+        opacity: 1 !important; pointer-events: auto !important;
+        width: 1920px; height: 1080px; break-after: page; page-break-after: always;
+    }
+    .slide:last-child { break-after: auto; page-break-after: auto; }
+    .deck-controls { display: none !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.2s !important;
+    }
+}
+
+/* ===========================================
+   SLIDE ATMOSPHERE
+   Vignette + faint scanlines on every slide.
+   =========================================== */
+.slide {
+    font-family: var(--font-body);
+    color: var(--body);
+    background: radial-gradient(ellipse at 68% 45%, var(--bg-lift) 0%, var(--slide-bg) 55%, var(--bg-deep) 100%);
+}
+.slide::before {               /* scanlines */
+    content: "";
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(0deg, rgba(159,179,168,.035) 0 2px, transparent 2px 5px);
+    pointer-events: none;
+    z-index: 0;
+}
+.slide > * { position: relative; z-index: 1; }
+
+/* ===========================================
+   VIEWFINDER CHROME (injected by JS on every slide)
+   Corner brackets, top HUD row, bottom HUD row.
+   =========================================== */
+.corner { position: absolute !important; width: 90px; height: 90px; border: 0 solid var(--sage); opacity: .7; }
+.corner.tl { left: 64px;  top: 64px;    border-width: 3px 0 0 3px; }
+.corner.tr { right: 64px; top: 64px;    border-width: 3px 3px 0 0; }
+.corner.bl { left: 64px;  bottom: 64px; border-width: 0 0 3px 3px; }
+.corner.br { right: 64px; bottom: 64px; border-width: 0 3px 3px 0; }
+
+.hud {
+    position: absolute !important;
+    font-family: var(--font-mono);
+    font-size: var(--t-small);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--sage);
+}
+.hud.top-left  { left: var(--pad-x);  top: 96px; }
+.hud.top-right { right: var(--pad-x); top: 96px; text-align: right; }
+.hud.bottom-right { right: var(--pad-x); bottom: 96px; color: var(--dim); }
+.hud .dot {
+    display: inline-block; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--rec); margin-right: 14px; vertical-align: 1px;
+    animation: blink 1.6s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* Source line, bottom-left, above the bracket */
+.source {
+    position: absolute !important;
+    left: var(--pad-x); bottom: 96px; width: 1300px;
+    font-family: var(--font-mono);
+    font-size: 20px; line-height: 1.4; letter-spacing: .02em;
+    color: var(--dim);
+}
+
+/* ===========================================
+   CONTENT FRAME
+   Standard content area between the HUD rows.
+   =========================================== */
+.frame {
+    position: absolute !important;
+    left: var(--pad-x); right: var(--pad-x);
+    top: 176px; bottom: 170px;
+    display: flex; flex-direction: column; gap: 40px;
+}
+
+/* ===========================================
+   TYPOGRAPHY
+   =========================================== */
+.hero {
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: var(--t-hero);
+    line-height: .86;
+    text-transform: uppercase;
+    color: var(--bone);
+}
+.h2 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: var(--t-h2);
+    line-height: .95;
+    text-transform: uppercase;
+    color: var(--bone);
+    letter-spacing: .005em;
+}
+.h3 {
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: var(--t-h3);
+    line-height: 1.2;
+    color: var(--bone);
+}
+.body { font-size: var(--t-body); line-height: 1.42; color: var(--body); }
+.small { font-size: var(--t-small); line-height: 1.4; color: var(--body); }
+.label {
+    font-family: var(--font-mono);
+    font-size: var(--t-small);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--amber);
+}
+.amber { color: var(--amber); }
+.big-num {
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 180px;
+    line-height: .85;
+    color: var(--amber);
+}
+
+/* ===========================================
+   COMPONENTS
+   =========================================== */
+/* Panel: a "target box" with bracket ticks on the top corners */
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    padding: 36px 40px;
+    display: flex; flex-direction: column; gap: 16px;
+    position: relative;
+}
+.panel::before, .panel::after {
+    content: ""; position: absolute; top: -2px; width: 24px; height: 24px;
+    border: 0 solid var(--amber);
+}
+.panel::before { left: -2px;  border-width: 3px 0 0 3px; }
+.panel::after  { right: -2px; border-width: 3px 3px 0 0; }
+
+.row { display: flex; gap: 32px; }
+.row > * { flex: 1; }
+
+/* Fact list item, used on case slides */
+.fact { border-left: 3px solid var(--sage); padding: 4px 0 4px 28px; display: flex; flex-direction: column; gap: 8px; }
+.fact .h3 { font-size: 32px; }
+.fact .body { font-size: 28px; }
+
+/* Reticle (decorative SVG) */
+.reticle { position: absolute !important; opacity: .5; pointer-events: none; }
+
+/* Tables */
+.table { width: 100%; border-collapse: collapse; }
+.table th {
+    font-family: var(--font-mono); font-weight: 500; font-size: 22px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--sage); text-align: left;
+    padding: 0 22px 18px; border-bottom: 2px solid var(--sage);
+}
+.table td {
+    font-size: 26px; line-height: 1.35; color: var(--body);
+    padding: 24px 22px; border-bottom: 1px solid var(--panel-line); vertical-align: top;
+}
+.table td.case { font-family: var(--font-display); font-weight: 800; font-size: 40px; color: var(--bone); text-transform: uppercase; line-height: 1; }
+.table td .yes { color: var(--amber); font-weight: 600; }
+
+/* Process chain (mechanism slide) */
+.chain { display: flex; align-items: stretch; gap: 0; }
+.chain .panel { flex: 1; }
+.chain .link { width: 64px; flex: none; align-self: center; height: 2px; background: repeating-linear-gradient(90deg, var(--amber) 0 10px, transparent 10px 18px); }
+.chain .t { font-family: var(--font-mono); font-size: 22px; color: var(--sage); letter-spacing: .1em; }
+
+/* Objection rows */
+.obj-row { display: grid; grid-template-columns: 640px 1fr; gap: 56px; padding: 30px 0; border-top: 1px solid var(--panel-line); }
+.obj-row:last-child { border-bottom: 1px solid var(--panel-line); }
+.obj-row .q { font-family: var(--font-body); font-style: italic; font-size: 30px; line-height: 1.35; color: var(--bone); }
+
+/* Spectrum (home slide) */
+.spectrum-bar { height: 10px; background: linear-gradient(90deg, var(--rec), var(--amber) 50%, var(--sage)); }
+.spectrum-ends { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 22px; letter-spacing: .08em; text-transform: uppercase; color: var(--sage); }
+
+/* Bibliography */
+.bib { display: flex; flex-direction: column; gap: 18px; }
+.bib p { font-size: 24px; line-height: 1.38; color: var(--body); padding-left: 40px; text-indent: -40px; }
+.bib i { color: var(--bone); }
+
+/* Speaker notes: hidden in the stage, shown in the notes panel (N key) */
+.notes { display: none !important; }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS
+   Elements with .reveal fade up when their slide becomes .visible.
+   Use .d1–.d5 for staggered timing.
+   =========================================== */
+.reveal {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity .7s var(--ease-out-expo), transform .7s var(--ease-out-expo);
+}
+.slide.visible .reveal { opacity: 1; transform: none; }
+.d1 { transition-delay: .1s; } .d2 { transition-delay: .2s; } .d3 { transition-delay: .3s; }
+.d4 { transition-delay: .4s; } .d5 { transition-delay: .5s; }
+
+.reveal-lock {             /* reticle "locks on" */
+    opacity: 0; transform: scale(1.25) rotate(-8deg);
+    transition: opacity 1.2s var(--ease-out-expo), transform 1.4s var(--ease-out-expo);
+}
+.slide.visible .reveal-lock { opacity: .5; transform: none; }
+
+/* ===========================================
+   PRESENTATION UI (outside the stage)
+   =========================================== */
+.progress { position: fixed; left: 0; bottom: 0; height: 3px; background: var(--amber); z-index: 1000; transition: width .4s var(--ease-out-expo); }
+.notes-panel {
+    position: fixed; right: 16px; bottom: 16px; width: min(520px, 90vw); max-height: 45vh; overflow: auto;
+    background: rgba(9,13,14,.95); border: 1px solid var(--panel-line); color: var(--body);
+    font: 16px/1.5 var(--font-body); padding: 18px 20px; z-index: 1001; display: none;
+}
+.notes-panel.show { display: block; }
+.notes-panel b { font-family: var(--font-mono); font-size: 12px; letter-spacing: .1em; color: var(--amber); display: block; margin-bottom: 8px; }
+
+/* Inline editing (hover top-left corner or press E) */
+.edit-hotzone { position: fixed; top: 0; left: 0; width: 80px; height: 80px; z-index: 10000; cursor: pointer; }
+.edit-toggle {
+    position: fixed; top: 16px; left: 16px; z-index: 10001;
+    font: 500 13px var(--font-mono); letter-spacing: .08em; text-transform: uppercase;
+    background: var(--bg-deep); color: var(--amber); border: 1px solid var(--amber); padding: 8px 12px; cursor: pointer;
+    opacity: 0; pointer-events: none; transition: opacity .3s ease;
+}
+.edit-toggle.show, .edit-toggle.active { opacity: 1; pointer-events: auto; }
+body.editing [contenteditable="true"] { outline: 1px dashed rgba(242,169,59,.5); outline-offset: 4px; }
+</style>
+</head>
+<body>
+<div class="deck-viewport">
+<main class="deck-stage" id="deckStage">
+
+<!-- ===================== 01 · COVER ===================== -->
+<section class="slide" data-hud="The Future of Warfare">
+    <svg class="reticle reveal-lock" style="left:1330px;top:230px;width:480px;height:480px" viewBox="0 0 620 620" aria-hidden="true" fill="none" stroke="#9FB3A8" stroke-width="2"><circle cx="310" cy="310" r="240"/><circle cx="310" cy="310" r="120" stroke-dasharray="6 10"/><path d="M310 20v170M310 430v170M20 310h170M430 310h170"/><path d="M290 310h40M310 290v40" stroke="#F2A93B" stroke-width="3"/></svg>
+    <h1 class="hero reveal d1" style="position:absolute;left:176px;top:300px">Living under<br>the <span class="amber">hum</span></h1>
+    <p class="body reveal d2" style="position:absolute;left:180px;top:720px;width:1000px;font-size:36px">The psychological toll of drone surveillance, and why it should count as civilian harm in future wars</p>
+    <p class="hud reveal d3" style="left:var(--pad-x);bottom:96px;color:var(--dim)">Cindy · Victoria · Evelyn · Pranav · Siddhanth</p>
+    <aside class="notes">Opening (about 30 seconds). Introduce the team and the topic. Hook: most debates about drones count bodies. We want to talk about the people who survive, and who live every day under a machine they can hear but cannot see or stop.</aside>
+</section>
+
+<!-- ===================== 02 · RESEARCH QUESTION ===================== -->
+<section class="slide" data-hud="Research question">
+    <div class="frame" style="justify-content:center;gap:56px">
+        <h2 class="h2 reveal" style="font-size:84px;line-height:1;max-width:1500px">As drone surveillance spreads from war zones to everyday life, what does it do to the people beneath it, and should that count as <span class="amber">civilian harm</span>?</h2>
+        <div class="row">
+            <div class="panel reveal d2"><p class="label">Why this question</p><p class="body">War’s costs reach far beyond the battlefield, and more ordinary people now live under drones.</p></div>
+            <div class="panel reveal d3"><p class="label">The gap</p><p class="body">Rich first-hand accounts of life under drones, and separate work on reducing civilian harm, but little that connects the two.</p></div>
+        </div>
+    </div>
+    <aside class="notes">Read the question slowly. Two parts: (1) an empirical question about psychological effects, and (2) a normative and legal question about whether those effects should count as “harm.” Our literature review found testimony-based research (Stanford/NYU, Edney-Browne) and civilian-harm-mitigation research, but few works that bring them together.</aside>
+</section>
+
+<!-- ===================== 03 · THESIS ===================== -->
+<section class="slide" data-hud="Our argument">
+    <svg class="reticle reveal-lock" style="left:1360px;top:250px;width:520px;height:520px" viewBox="0 0 620 620" aria-hidden="true" fill="none" stroke="#9FB3A8" stroke-width="1.5"><circle cx="310" cy="310" r="240"/><circle cx="310" cy="310" r="120" stroke-dasharray="6 10"/><path d="M310 20v170M310 430v170M20 310h170M430 310h170"/></svg>
+    <div class="frame" style="justify-content:center;gap:48px">
+        <p class="label reveal">Thesis</p>
+        <p class="reveal d1" style="font-family:var(--font-body);font-weight:500;font-size:52px;line-height:1.3;color:var(--bone);max-width:1120px">Persistent drone surveillance causes real, documented psychological harm because civilians can never tell who is being watched or when a strike will follow. In future wars, that harm should be <span class="amber">counted as civilian harm</span>, not dismissed as a side effect.</p>
+        <p class="body reveal d3" style="max-width:1100px">The harm scales with how credible the threat is: severe where drones strike, milder where they only watch.</p>
+    </div>
+    <aside class="notes">This is our thesis. Emphasize the three moving parts: (1) the harm is real and documented, (2) the cause is uncertainty, not just violence, and (3) the conclusion is legal and policy-facing: count it. The last line previews the nuance we add at the end. We are NOT claiming a police drone over Pittsburgh equals a Reaper over Waziristan.</aside>
+</section>
+
+<!-- ===================== 04 · WHY NOW ===================== -->
+<section class="slide" data-hud="Why now">
+    <div class="frame">
+        <h2 class="h2 reveal">Drones are becoming a permanent part of the sky</h2>
+        <div class="row" style="flex:1">
+            <div class="panel reveal d1"><p class="big-num">24/7</p><p class="h3">North Waziristan, 2012</p><p class="body" style="font-size:28px">Researchers found US drones hovering over communities around the clock, striking without warning.</p></div>
+            <div class="panel reveal d2"><p class="big-num">~100</p><p class="h3">Kherson, spring 2025</p><p class="body" style="font-size:28px">Drone attacks per day on the city in March 2025, per the regional military administration.</p></div>
+            <div class="panel reveal d3"><p class="big-num">1,000+</p><p class="h3">United States, 2026</p><p class="body" style="font-size:28px">Public-safety agencies with FAA waivers for automated “drone as first responder” programs (Feb. 2026).</p></div>
+        </div>
+    </div>
+    <p class="source">Stanford &amp; NYU, Living Under Drones (2012) · Euromaidan Press, citing Kherson military administration (2025) · EFF (2026)</p>
+    <aside class="notes">Three numbers, three settings. Drone presence is no longer occasional. It is continuous in war zones, and it is quickly becoming normal in domestic policing. If continuous presence harms people, the scale of that harm is about to grow.</aside>
+</section>
+
+<!-- ===================== 05 · MECHANISM ===================== -->
+<section class="slide" data-hud="How the harm works">
+    <div class="frame">
+        <h2 class="h2 reveal">Uncertainty, not just violence, does the damage</h2>
+        <div class="chain" style="flex:1">
+            <div class="panel reveal d1"><p class="t">T+01</p><p class="h3">Constant presence</p><p class="body" style="font-size:28px">The drone is heard or seen for hours or days at a time.</p></div>
+            <div class="link reveal d2"></div>
+            <div class="panel reveal d2"><p class="t">T+02</p><p class="h3">Questions with no answer</p><p class="body" style="font-size:28px">Who is it watching? Will it strike? Civilians cannot know.</p></div>
+            <div class="link reveal d3"></div>
+            <div class="panel reveal d3"><p class="t">T+03</p><p class="h3">Anticipatory anxiety</p><p class="body" style="font-size:28px">Hypervigilance, startle, insomnia, nightmares.</p></div>
+            <div class="link reveal d4"></div>
+            <div class="panel reveal d4"><p class="t">T+04</p><p class="h3">Life shrinks</p><p class="body" style="font-size:28px">People skip gatherings, keep children home, and eventually leave.</p></div>
+        </div>
+        <p class="body reveal d5">Surveillance happens far more often than strikes, so its psychological reach is far wider than the casualty count.</p>
+    </div>
+    <p class="source">Framework adapted from Hijazi et al. (2019), Current Psychology · Stanford &amp; NYU (2012)</p>
+    <aside class="notes">This is the causal chain we test in the case studies. Hijazi et al. (2019) note that surveillance occurs far more often than strikes, and that signature strikes make ordinary behavior itself look suspicious, so people cannot protect themselves by being “innocent.” The last step is where psychological harm becomes social and economic harm.</aside>
+</section>
+
+<!-- ===================== 06 · CASE: WAZIRISTAN ===================== -->
+<section class="slide" data-hud="Case 01 · North Waziristan, Pakistan">
+    <div class="frame">
+        <div class="reveal"><p class="label">2004–2012</p><h2 class="h2" style="margin-top:12px">Watched, then struck</h2></div>
+        <div class="row" style="gap:64px">
+            <div style="display:flex;flex-direction:column;gap:32px;flex:0 0 640px">
+                <div class="fact reveal d1"><p class="h3">“Anticipatory anxiety”</p><p class="body">A local psychiatrist’s term for patients’ constant fear that an attack could come at any moment.</p></div>
+                <div class="fact reveal d2"><p class="h3">Body and mind</p><p class="body">Emotional breakdowns, fainting, nightmares, startle at loud noises, irritability, loss of appetite.</p></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:32px">
+                <div class="fact reveal d2"><p class="h3">Funerals emptied</p><p class="body">People avoided funerals and gatherings after reports that they had been struck.</p></div>
+                <div class="fact reveal d3"><p class="h3">Rescuers held back</p><p class="body">Neighbours and aid workers waited hours to help the wounded, fearing a follow-up strike.</p></div>
+                <div class="fact reveal d4"><p class="h3">Harm left uncounted</p><p class="body">The authors found harm to daily life well beyond death and physical injury.</p></div>
+            </div>
+        </div>
+    </div>
+    <p class="source">Stanford IHRCRC &amp; NYU Global Justice Clinic, Living Under Drones (2012) · PRI (2012) · Bureau of Investigative Journalism (2012)</p>
+    <aside class="notes">Living Under Drones (2012) is our anchor study: nine months of research, interviews with survivors, witnesses, doctors and journalists. Key point for our thesis: the behavioural changes, like avoiding funerals and delaying rescue, show the fear is rational. It responds to a credible threat of follow-up strikes. That is why it is harm, not mere perception.</aside>
+</section>
+
+<!-- ===================== 07 · CASE: GAZA ===================== -->
+<section class="slide" data-hud="Case 02 · Gaza">
+    <div class="frame">
+        <div class="reveal"><p class="label">2006–present</p><h2 class="h2" style="margin-top:12px">The “zanana”: a sound that never leaves</h2></div>
+        <div class="row" style="gap:64px">
+            <div style="display:flex;flex-direction:column;gap:24px;flex:0 0 640px" class="reveal d1">
+                <p class="big-num">~4,000</p>
+                <p class="body">Monthly drone flight hours over Gaza reported by AFP in 2022: roughly five drones in the sky at all times, even between wars.</p>
+                <p class="body" style="font-style:italic;color:var(--bone)">Residents named the drones for their sound: <span class="amber">zanana</span>, a buzzing like bees.</p>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:32px">
+                <div class="fact reveal d2"><p class="h3">Powerlessness</p><p class="body">A Gaza psychiatrist told AFP you can swat an insect but not a drone, which feeds helplessness.</p></div>
+                <div class="fact reveal d3"><p class="h3">Children</p><p class="body">Clinicians describe night terrors, bedwetting, and trouble with speech and concentration.</p></div>
+                <div class="fact reveal d4"><p class="h3">It lingers</p><p class="body">Doctors warn symptoms do not fade when the sound pauses, because flights can resume any time.</p></div>
+            </div>
+        </div>
+    </div>
+    <p class="source">AFP via Asharq Al-Awsat (2022) · The New Arab (2025) · Al-Quds (2026)</p>
+    <aside class="notes">Gaza shows the harm persists even between wars, which matters for our argument: the cause is presence plus credible threat, not just active bombing. Much of this evidence is clinician testimony and journalism; one psychiatrist told AFP there is a lack of systematic research on long-term effects. That gap is itself part of our argument: harm that is not measured is not counted.</aside>
+</section>
+
+<!-- ===================== 08 · CASE: KHERSON ===================== -->
+<section class="slide" data-hud="Case 03 · Kherson, Ukraine">
+    <div class="frame">
+        <div class="reveal"><p class="label">2024–2025</p><h2 class="h2" style="margin-top:12px">Cheap drones, hunting people</h2></div>
+        <div class="row" style="gap:64px">
+            <div style="display:flex;flex-direction:column;gap:24px;flex:0 0 640px" class="reveal d1">
+                <p class="big-num">150+</p>
+                <p class="body">Civilians killed by short-range drone attacks in the Kherson region from July 2024, per the UN Commission of Inquiry’s May 2025 report. Residents call it a “human safari.”</p>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:32px">
+                <div class="fact reveal d2"><p class="h3">Terror as the purpose</p><p class="body">The UN found the attacks’ primary purpose was to spread terror among civilians.</p></div>
+                <div class="fact reveal d3"><p class="h3">Fear became flight</p><p class="body">Thousands fled, which the commission found to be the crime against humanity of forcible transfer.</p></div>
+                <div class="fact reveal d4"><p class="h3">On the legal record</p><p class="body">A UN inquiry tied drone-induced terror directly to crimes against humanity and war crimes.</p></div>
+            </div>
+        </div>
+    </div>
+    <p class="source">UN Independent International Commission of Inquiry on Ukraine (May 2025) · Human Rights Watch (June 2025) · Atlantic Council (2025)</p>
+    <aside class="notes">Kherson is the future-of-warfare case: cheap commercial quadcopters, livestreamed hunting, ordinary people chased on their way to work. It is also the strongest legal precedent for our argument. But note the limit: this was recognised because the terror was INTENTIONAL. The next slides ask about harm that is not intended.</aside>
+</section>
+
+<!-- ===================== 09 · COMPARISON ===================== -->
+<section class="slide" data-hud="Across the cases">
+    <div class="frame">
+        <h2 class="h2 reveal">Same mechanism, different intensity</h2>
+        <table class="table reveal d1">
+            <tr><th style="width:250px">Case</th><th>Drone’s role</th><th>Documented effects</th><th>How life changed</th><th style="width:330px">Counted as harm?</th></tr>
+            <tr><td class="case">Waziristan</td><td>Round-the-clock watching; targeted and “signature” strikes</td><td>Anticipatory anxiety, nightmares, startle</td><td>Avoided funerals; delayed rescue</td><td>No: outside official casualty counts</td></tr>
+            <tr><td class="case">Gaza</td><td>Near-constant watching; strikes in escalations</td><td>Powerlessness; child night terrors</td><td>Broken sleep; children kept close</td><td>No: described by clinicians and press</td></tr>
+            <tr><td class="case">Kherson</td><td>Short-range drones hunting individuals</td><td>Terror; fear of leaving home</td><td>Mass flight from the city</td><td><span class="yes">Yes:</span> UN found crimes against humanity</td></tr>
+        </table>
+        <p class="body reveal d3">The pattern: law recognises this harm only when terror is the <span class="amber">intent</span>. As a by-product, it goes uncounted.</p>
+    </div>
+    <aside class="notes">This is the payoff of the case studies. All three share the chain from the mechanism slide. What differs is (1) how credible the threat of a strike is and (2) whether anyone officially recognises the harm. Only Kherson, where terror was deliberate, got legal recognition. That gap motivates the legal section.</aside>
+</section>
+
+<!-- ===================== 10 · LAW ===================== -->
+<section class="slide" data-hud="Where the law stands">
+    <div class="frame">
+        <h2 class="h2 reveal">IHL protects minds from intended terror, not side effects</h2>
+        <div class="row" style="flex:1">
+            <div class="panel reveal d1"><p class="label">Clearly covered</p><p class="h3">Intentional terror</p><p class="body" style="font-size:28px">Violence or threats meant mainly to terrorise civilians are banned (Additional Protocol I, Art. 51(2)). This is the rule applied in Kherson.</p></div>
+            <div class="panel reveal d2"><p class="label">Contested</p><p class="h3">Incidental mental harm</p><p class="body" style="font-size:28px">Proportionality weighs “injury to civilians” against military advantage. Whether mental injury counts is debated; the traditional view says no.</p></div>
+            <div class="panel reveal d3"><p class="label">Emerging</p><p class="h3">Cumulative mental harm</p><p class="body" style="font-size:28px">New scholarship, including 2026 International Review of the Red Cross articles, argues harm built up over many operations should count.</p></div>
+        </div>
+        <p class="body reveal d4">Persistent surveillance sits in the gap: rarely meant to terrorise, never a single attack, cumulative by design.</p>
+    </div>
+    <p class="source">Bosi, ICRC Humanitarian Law &amp; Policy Blog (2025) · Lieblich (2014) · Diamond &amp; van Benthem, IRRC (2026) · Holmes, IRRC (2026)</p>
+    <aside class="notes">Walk through the three columns. Left: the terror ban works, but only for intent. Middle: proportionality is the rule commanders apply daily. Schmitt and the traditional view treat lowered civilian morale as outside collateral damage; Lieblich and Knuckey et al. argue mental harm belongs in the calculation. Right: the newest work on cumulative harm fits drone surveillance best, because no single flight is the problem; the build-up is.</aside>
+</section>
+
+<!-- ===================== 11 · OBJECTIONS ===================== -->
+<section class="slide" data-hud="Objections">
+    <div class="frame" style="gap:32px">
+        <h2 class="h2 reveal">The strongest case against us</h2>
+        <div>
+            <div class="obj-row reveal d1"><p class="q">“Surveillance is not an attack, so IHL’s harm rules don’t apply.”</p><p class="body">Surveillance is part of the targeting cycle. In all three cases, civilians knew strikes could follow, and the harm comes from that credible link.</p></div>
+            <div class="obj-row reveal d2"><p class="q">“Mental harm is too subjective to weigh in a proportionality call.”</p><p class="body">Clinicians document consistent symptoms, and IHL already weighs other uncertain harms. Hard to measure is not the same as zero.</p></div>
+            <div class="obj-row reveal d3"><p class="q">“Drones are more precise, so they cause less harm than bombing.”</p><p class="body">Precision may cut deaths per strike, but persistence widens who is affected. Both should be counted, not just one.</p></div>
+        </div>
+    </div>
+    <aside class="notes">Address these honestly; graders reward engaging the best counterarguments. Concede what is true: precision can reduce physical casualties, and measurement is genuinely hard. Our claim is narrower: that the harm should be counted and weighed, not that drones must be banned.</aside>
+</section>
+
+<!-- ===================== 12 · HOME ===================== -->
+<section class="slide" data-hud="From war zones to everyday skies">
+    <div class="frame" style="gap:36px">
+        <h2 class="h2 reveal">At home, the same mechanism runs quieter</h2>
+        <div class="reveal d1" style="display:flex;flex-direction:column;gap:14px">
+            <div class="spectrum-ends"><span>Strike highly credible</span><span>No strike possible</span></div>
+            <div class="spectrum-bar"></div>
+        </div>
+        <div class="row">
+            <div class="panel reveal d2"><p class="label">Hunted</p><p class="body" style="font-size:28px">Kherson. Strikes are likely and aimed at people. Result: terror and flight.</p></div>
+            <div class="panel reveal d3"><p class="label">Watched and struck</p><p class="body" style="font-size:28px">Waziristan, Gaza. A strike could come any time. Result: chronic anxiety.</p></div>
+            <div class="panel reveal d4"><p class="label">Watched only</p><p class="body" style="font-size:28px">US police drone programs. No strikes, but unknown watching. Likely result: wariness and self-censorship, not trauma.</p></div>
+        </div>
+        <p class="body reveal d5">LAPD flew drones 3,500+ times in its first-responder pilot. Beyond FAA rules, no federal law governs these programs, so standards vary by state.</p>
+    </div>
+    <p class="source">Los Angeles Times (2026) · InvestigateTV, quoting Jay Stanley of the ACLU (2026) · EFF (2026)</p>
+    <aside class="notes">This answers the first half of our research question. We are careful NOT to equate a police drone with a war zone. The mechanism is the same (not knowing who is watched), but intensity scales with how credible a violent follow-up is. At home the likely effect is a chilling effect on protest and public life. The lesson from the war cases: once drones become constant and their purpose unclear, harm builds quietly, so guardrails should come before that point.</aside>
+</section>
+
+<!-- ===================== 13 · RECOMMENDATIONS ===================== -->
+<section class="slide" data-hud="What should change">
+    <div class="frame" style="gap:36px">
+        <h2 class="h2 reveal">Four recommendations</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;flex:1">
+            <div class="panel reveal d1"><p class="label">In war · 01</p><p class="h3">Count mental harm in proportionality</p><p class="body" style="font-size:28px">Include foreseeable psychological harm in pre-strike assessments and civilian-harm tracking.</p></div>
+            <div class="panel reveal d2"><p class="label">In war · 02</p><p class="h3">Treat persistence as a precaution</p><p class="body" style="font-size:28px">Limit low-altitude loitering over homes, schools and camps where it adds little intelligence.</p></div>
+            <div class="panel reveal d3"><p class="label">After war · 03</p><p class="h3">Include mental health in redress</p><p class="body" style="font-size:28px">Compensation and aid after conflict should cover psychological harm, especially for children.</p></div>
+            <div class="panel reveal d4"><p class="label">At home · 04</p><p class="h3">Make domestic drones legible</p><p class="body" style="font-size:28px">Public flight logs, data-retention limits and independent oversight, so residents know when and why.</p></div>
+        </div>
+    </div>
+    <aside class="notes">Each recommendation maps to a finding. 1 follows from the legal gap. 2 follows from the mechanism: persistence itself drives the harm. 3 follows from Gaza: symptoms outlast the flights. 4 follows from the domestic spectrum: reducing uncertainty about who is watched is what lowers the psychological cost.</aside>
+</section>
+
+<!-- ===================== 14 · CONCLUSION ===================== -->
+<section class="slide" data-hud="Conclusion">
+    <svg class="reticle reveal-lock" style="left:1360px;top:250px;width:520px;height:520px" viewBox="0 0 620 620" aria-hidden="true" fill="none" stroke="#9FB3A8" stroke-width="1.5"><circle cx="310" cy="310" r="240"/><circle cx="310" cy="310" r="120" stroke-dasharray="6 10"/><path d="M310 20v170M310 430v170M20 310h170M430 310h170"/><path d="M290 310h40M310 290v40" stroke="#F2A93B" stroke-width="3"/></svg>
+    <div class="frame" style="justify-content:center;gap:48px">
+        <h2 class="hero reveal d1" style="font-size:140px;line-height:.9;max-width:1120px">A drone does not have to fire to <span class="amber">harm</span> the people below it.</h2>
+        <p class="body reveal d3" style="max-width:1100px;font-size:32px">If future wars are fought under permanently occupied skies, counting only the dead will leave most victims invisible. Psychological harm from persistent surveillance should be measured, weighed and redressed as civilian harm.</p>
+    </div>
+    <aside class="notes">Close by returning to the hook. Restate the thesis in one breath, then invite questions. Q&amp;A prep: (1) How would a commander measure mental harm? Use foreseeable, population-level estimates, as with other incidental harms. (2) Does this apply to operators? Operator trauma (Harvard NSJ 2015; Richardson 2023) is a parallel harm, outside our scope.</aside>
+</section>
+
+<!-- ===================== 15–17 · BIBLIOGRAPHY ===================== -->
+<section class="slide" data-hud="Bibliography · 1 of 3">
+    <div class="frame" style="gap:36px">
+        <h2 class="h2" style="font-size:72px">Bibliography</h2>
+        <div class="bib">
+            <p>AFP. (2022, October 1). ‘Worry and fear’: Incessant Israeli drones heighten Gaza anxiety. <i>Asharq Al-Awsat</i>. https://english.aawsat.com/node/3905716</p>
+            <p>Bosi, G. (2025, October 16). Six ways IHL protects mental health. <i>ICRC Humanitarian Law &amp; Policy Blog</i>. https://blogs.icrc.org/law-and-policy/2025/10/16/six-ways-ihl-protects-mental-health/</p>
+            <p>Diamond, E., &amp; van Benthem, T. (2026). Protections against cumulative mental harm under international humanitarian law. <i>International Review of the Red Cross</i>. https://doi.org/10.1017/S1816383126101313</p>
+            <p>Dickinson, P. (2025, May 29). UN probe: Russia’s ‘human safari’ in Ukraine is a crime against humanity. <i>Atlantic Council</i>.</p>
+            <p>Edney-Browne, A. (2019). The psychosocial effects of drone violence: Social isolation, self-objectification, and depoliticization. <i>Political Psychology, 40</i>(6), 1341–1356. https://doi.org/10.1111/pops.12629</p>
+            <p>Hijazi, A. M., Ferguson, C. J., Ferraro, F. R., et al. (2019). Psychological dimensions of drone warfare. <i>Current Psychology</i>. Springer.</p>
+            <p>Holmes, S. (2026). Incidental mental harm through a decolonial lens. <i>International Review of the Red Cross</i>. https://doi.org/10.1017/S1816383126101337</p>
+        </div>
+    </div>
+    <aside class="notes">Formal bibliography, as required by the assignment.</aside>
+</section>
+
+<section class="slide" data-hud="Bibliography · 2 of 3">
+    <div class="frame" style="gap:36px">
+        <h2 class="h2" style="font-size:72px">Bibliography</h2>
+        <div class="bib">
+            <p>Human Rights Watch. (2025, June 2). <i>“Hunted from above”: Russia’s use of drones to attack civilians in Kherson, Ukraine</i>. https://www.hrw.org</p>
+            <p>Independent International Commission of Inquiry on Ukraine. (2025, May 28). <i>Findings on drone attacks against civilians in the Kherson region</i>. UN Human Rights Council.</p>
+            <p>International Committee of the Red Cross. (n.d.). <i>FAQ: International humanitarian law and drones in armed conflict</i>. https://www.icrc.org/en/article/faq-international-humanitarian-law-drones-armed-conflict</p>
+            <p>International Human Rights and Conflict Resolution Clinic (Stanford Law School) &amp; Global Justice Clinic (NYU School of Law). (2012). <i>Living under drones: Death, injury, and trauma to civilians from US drone practices in Pakistan</i>.</p>
+            <p>InvestigateTV. (2026, February 6). Police drone programs expand as first-responder tool, raising privacy concerns in some. <i>Gray Television</i>.</p>
+            <p>Lieblich, E. (2014). Beyond life and limb: Exploring incidental mental harm under international humanitarian law. In D. Jinks, J. N. Maogoto &amp; S. Solomon (Eds.), <i>Applying international humanitarian law in judicial and quasi-judicial bodies</i> (pp. 185–218). T.M.C. Asser Press.</p>
+        </div>
+    </div>
+    <aside class="notes">Formal bibliography, continued.</aside>
+</section>
+
+<section class="slide" data-hud="Bibliography · 3 of 3">
+    <div class="frame" style="gap:36px">
+        <h2 class="h2" style="font-size:72px">Bibliography</h2>
+        <div class="bib">
+            <p>Jany, L. (2026, April 28). [Article on the LAPD drone-as-first-responder pilot]. <i>Los Angeles Times</i>.</p>
+            <p>Lipton, B. (2026, July 23). Hundreds of drone-as-first-responder programs could soon be launched across the country. <i>Electronic Frontier Foundation</i>. https://www.eff.org/deeplinks/2026/07/hundreds-drone-first-responder-programs-could-soon-be-launched-across-country</p>
+            <p>Richardson, M. (2023). Drone trauma: Violent mediation and remote warfare. <i>Media, Culture &amp; Society, 45</i>(1), 202–211.</p>
+            <p>Stanley, J. (2023). Eye-in-the-sky policing needs strict limits. <i>ACLU</i>. https://www.acluhi.org</p>
+            <p>The hidden cost of drone combat on soldiers’ mental health. (2015, April). <i>Harvard National Security Journal</i>. https://journals.law.harvard.edu/nsj/2015/04/</p>
+            <p>The New Arab. (2025). Psychological strain: Israel’s drones continue to terrorise Gaza. https://www.newarab.com</p>
+            <p>Zabrisky, Z. (2025, May 28). I walked the streets where Russia’s drones hunt civilians. The UN just confirmed it’s a war crime. <i>Euromaidan Press</i>.</p>
+        </div>
+    </div>
+    <aside class="notes">Formal bibliography, continued. Before presenting, fill in the exact title of the Los Angeles Times article in brackets.</aside>
+</section>
+
+</main>
+</div>
+
+<!-- Presentation UI (outside the stage) -->
+<div class="progress" id="progress"></div>
+<div class="notes-panel" id="notesPanel" aria-live="polite"></div>
+<div class="edit-hotzone" id="editHotzone"></div>
+<button class="edit-toggle" id="editToggle" title="Edit mode (E)">Edit</button>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   Keys: ← → Space PageUp PageDown Home End
+         N = speaker notes   E = edit mode   F = fullscreen
+   Also: mouse wheel and touch swipe.
+   =========================================== */
+class SlidePresentation {
+    constructor() {
+        this.stage = document.getElementById('deckStage');
+        this.slides = Array.from(document.querySelectorAll('.slide'));
+        this.progress = document.getElementById('progress');
+        this.notesPanel = document.getElementById('notesPanel');
+        this.current = 0;
+        this.injectChrome();
+        this.setupStageScale();
+        this.setupKeyboardNav();
+        this.setupWheelNav();
+        this.setupTouchNav();
+        const fromHash = parseInt((location.hash.match(/slide-(\d+)/) || [])[1], 10);
+        this.showSlide(Number.isFinite(fromHash) ? fromHash - 1 : 0);
+    }
+
+    /* Viewfinder chrome: corner brackets, HUD label, page counter */
+    injectChrome() {
+        const total = String(this.slides.length).padStart(2, '0');
+        this.slides.forEach((slide, i) => {
+            ['tl', 'tr', 'bl', 'br'].forEach(c => {
+                const d = document.createElement('div');
+                d.className = 'corner ' + c;
+                d.setAttribute('aria-hidden', 'true');
+                slide.appendChild(d);
+            });
+            const top = document.createElement('div');
+            top.className = 'hud top-left';
+            top.innerHTML = '<span class="dot"></span>' + (slide.dataset.hud || '');
+            const meta = document.createElement('div');
+            meta.className = 'hud top-right';
+            meta.textContent = 'Carnegie Mellon · Fall 2026';
+            const num = document.createElement('div');
+            num.className = 'hud bottom-right';
+            num.textContent = String(i + 1).padStart(2, '0') + ' / ' + total;
+            slide.append(top, meta, num);
+        });
+    }
+
+    setupStageScale() {
+        const scale = () => {
+            const k = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+            const x = (window.innerWidth - 1920 * k) / 2;
+            const y = (window.innerHeight - 1080 * k) / 2;
+            this.stage.style.transform = `translate(${x}px, ${y}px) scale(${k})`;
+        };
+        scale();
+        window.addEventListener('resize', scale);
+    }
+
+    isEditing(e) {
+        return document.body.classList.contains('editing') && e && e.target && e.target.isContentEditable;
+    }
+
+    setupKeyboardNav() {
+        document.addEventListener('keydown', (e) => {
+            if (this.isEditing(e)) return;
+            if (['ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); this.next(); }
+            else if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); this.prev(); }
+            else if (e.key === 'Home') this.showSlide(0);
+            else if (e.key === 'End') this.showSlide(this.slides.length - 1);
+            else if (e.key === 'n' || e.key === 'N') this.notesPanel.classList.toggle('show');
+            else if (e.key === 'f' || e.key === 'F') {
+                if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+                else document.exitFullscreen?.();
+            }
+        });
+    }
+
+    setupWheelNav() {
+        let locked = false;
+        window.addEventListener('wheel', (e) => {
+            if (locked || Math.abs(e.deltaY) < 30) return;
+            locked = true;
+            e.deltaY > 0 ? this.next() : this.prev();
+            setTimeout(() => (locked = false), 700);
+        }, { passive: true });
+    }
+
+    setupTouchNav() {
+        let x0 = null;
+        window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+        window.addEventListener('touchend', (e) => {
+            if (x0 === null) return;
+            const dx = e.changedTouches[0].clientX - x0;
+            if (Math.abs(dx) > 50) dx < 0 ? this.next() : this.prev();
+            x0 = null;
+        });
+    }
+
+    next() { this.showSlide(this.current + 1); }
+    prev() { this.showSlide(this.current - 1); }
+
+    showSlide(index) {
+        this.current = Math.max(0, Math.min(index, this.slides.length - 1));
+        this.slides.forEach((s, i) => {
+            const on = i === this.current;
+            s.classList.toggle('active', on);
+            s.classList.toggle('visible', on);
+            s.setAttribute('aria-hidden', on ? 'false' : 'true');
+        });
+        this.progress.style.width = ((this.current + 1) / this.slides.length * 100) + '%';
+        const notes = this.slides[this.current].querySelector('.notes');
+        this.notesPanel.innerHTML = '<b>SPEAKER NOTES · ' + (this.current + 1) + '</b>' + (notes ? notes.innerHTML : '');
+        history.replaceState(null, '', '#slide-' + (this.current + 1));
+    }
+}
+
+/* ===========================================
+   INLINE EDITOR
+   Hover the top-left corner or press E. Click any text to edit.
+   Edits auto-save in this browser when you leave edit mode.
+   =========================================== */
+class InlineEditor {
+    constructor() {
+        this.isActive = false;
+        this.key = 'living-under-the-hum-edits-v1';
+        this.targets = () => document.querySelectorAll('.deck-stage h1, .deck-stage h2, .deck-stage p, .deck-stage td, .deck-stage th');
+        this.restore();
+    }
+    toggleEditMode() {
+        this.isActive = !this.isActive;
+        document.body.classList.toggle('editing', this.isActive);
+        document.getElementById('editToggle').classList.toggle('active', this.isActive);
+        document.getElementById('editToggle').textContent = this.isActive ? 'Done' : 'Edit';
+        this.targets().forEach(el => {
+            if (el.classList.contains('hud')) return;
+            el.contentEditable = this.isActive ? 'true' : 'false';
+        });
+        if (!this.isActive) this.save();
+    }
+    save() {
+        try {
+            const data = Array.from(this.targets()).map(el => el.innerHTML);
+            localStorage.setItem(this.key, JSON.stringify(data));
+        } catch (e) { /* storage unavailable: edits stay in this tab only */ }
+    }
+    restore() {
+        try {
+            const raw = localStorage.getItem(this.key);
+            if (!raw) return;
+            const data = JSON.parse(raw);
+            const els = this.targets();
+            if (data.length !== els.length) return;
+            els.forEach((el, i) => { el.innerHTML = data[i]; });
+        } catch (e) { /* ignore */ }
+    }
+}
+
+const editor = new InlineEditor();
+const deck = new SlidePresentation();
+
+/* Edit toggle: hover hotzone with 400ms grace, click, or E key */
+(() => {
+    const hotzone = document.getElementById('editHotzone');
+    const toggle = document.getElementById('editToggle');
+    let hideTimeout = null;
+    const hideLater = () => { hideTimeout = setTimeout(() => { if (!editor.isActive) toggle.classList.remove('show'); }, 400); };
+    hotzone.addEventListener('mouseenter', () => { clearTimeout(hideTimeout); toggle.classList.add('show'); });
+    hotzone.addEventListener('mouseleave', hideLater);
+    toggle.addEventListener('mouseenter', () => clearTimeout(hideTimeout));
+    toggle.addEventListener('mouseleave', hideLater);
+    toggle.addEventListener('click', () => editor.toggleEditMode());
+    hotzone.addEventListener('click', () => editor.toggleEditMode());
+    document.addEventListener('keydown', (e) => {
+        if ((e.key === 'e' || e.key === 'E') && !e.target.isContentEditable) editor.toggleEditMode();
+    });
+})();
+</script>
+</body>
+</html>
