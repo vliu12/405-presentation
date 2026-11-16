@@ -49,11 +49,11 @@ Fill in names so that two people aren't rewriting the same slide at once.
 
 | Slides | Section | Owner |
 | --- | --- | --- |
-| 01–03 | Cover, research question, thesis | _[name]_ |
-| 04–05 | Why now, how the harm works | _[name]_ |
-| 06–09 | Case studies and comparison | _[name]_ |
-| 10–11 | The law and objections | _[name]_ |
-| 12–14 | At home, recommendations, conclusion | _[name]_ |
+| 01–03 | Cover, research question, thesis | Pranav |
+| 04–05 | Why now, how the harm works | Evelyn |
+| 06–09 | Case studies and comparison | Siddhanth |
+| 10–11 | The law and objections | Victoria |
+| 12–14 | At home, recommendations, conclusion | Cindy |
 | 15–17 | Bibliography | everyone |
 
 ## Working together on GitHub
